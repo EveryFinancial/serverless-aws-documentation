@@ -136,7 +136,48 @@ module.exports = function() {
         }));
     },
 
+    _updateFunctionDocumentation: function _updateFunctionDocumentation() {
+      const aws = this.serverless.providers.aws;
+
+      return aws.request('APIGateway', 'getDocumentationParts', {
+          restApiId: this.restApiId,
+          limit: 9999
+      })
+      .then(results => results.items.map(
+        part => {
+          var existingParts = this.documentationParts.filter(docPart =>
+            part.location.type === docPart.location.type &&
+            part.location.method === docPart.location.method &&
+            part.location.statusCode === docPart.location.statusCode &&
+            part.location.name === docPart.location.name &&
+            part.location.path === '/' + docPart.location.path
+          );
+          
+          // if (existingParts.length == 1 && existingParts[0].properties == part.properties) {
+          //   console.info('Found identical existing documentation part:' + JSON.stringify(part));
+          //   old.push(part)
+
+          // } else {
+          if (existingParts.length > 0) {
+            console.info('Delete existing documentation part:' + JSON.stringify(part));
+            return aws.request('APIGateway', 'deleteDocumentationPart', {
+              documentationPartId: part.id,
+              restApiId: this.restApiId,
+            })
+          }
+        }
+      ))
+      .then(promises => Promise.all(promises))
+      .then(() => this.documentationParts.reduce((promise, part) => {
+        return promise.then(() => {
+          part.properties = JSON.stringify(part.properties);
+          return aws.request('APIGateway', 'createDocumentationPart', part);         
+        });
+      }, Promise.resolve()));
+    },
+
     getGlobalDocumentationParts: function getGlobalDocumentationParts() {
+      if (!this.customVars.documentation) return;
       const globalDocumentation = this.customVars.documentation;
       this.createDocumentationParts(globalDocumentationParts, globalDocumentation, {});
     },
@@ -182,7 +223,10 @@ module.exports = function() {
     },
 
     getDocumentationVersion: function getDocumentationVersion() {
-      return this.customVars.documentation.version || autoVersion || this.generateAutoDocumentationVersion();
+        if (this.customVars.documentation && this.customVars.documentation.version) {
+          return this.customVars.documentation.version;
+        }
+        return autoVersion || this.generateAutoDocumentationVersion();
     },
 
     _buildDocumentation: function _buildDocumentation(result) {
@@ -200,7 +244,12 @@ module.exports = function() {
         return;
       }
 
-      return this._updateDocumentation();
+      if (this.customVars.documentation) {
+        return this._updateDocumentation();
+      } else {
+        return this._updateFunctionDocumentation();
+      }
+      
     },
 
     addDocumentationToApiGateway: function addDocumentationToApiGateway(resource, documentationPart, mapPath) {
@@ -245,6 +294,11 @@ module.exports = function() {
         }
         resource.DependsOn = Array.from(resource.DependsOn);
         if (resource.DependsOn.length === 0) {
+          delete resource.DependsOn;
+        }
+        
+        // If there is no documentation section, assume that models already exist in a shared apigateway
+        if(!this.customVars.documentation) {
           delete resource.DependsOn;
         }
       }
