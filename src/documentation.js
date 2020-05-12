@@ -1,6 +1,7 @@
 'use strict';
 
 const objectHash = require('object-hash');
+const _ = require('lodash');
 
 const globalDocumentationParts = require('./globalDocumentationParts.json');
 const functionDocumentationParts = require('./functionDocumentationParts.json');
@@ -145,21 +146,27 @@ module.exports = function() {
       })
       .then(results => results.items.map(
         part => {
-          var existingParts = this.documentationParts.filter(docPart =>
+          // Find a (generated) docPart that matches an (existing) part in APIGw
+          var generatedPart = this.documentationParts.find(docPart =>
             part.location.type === docPart.location.type &&
             part.location.method === docPart.location.method &&
             part.location.statusCode === docPart.location.statusCode &&
             part.location.name === docPart.location.name &&
             part.location.path === '/' + docPart.location.path
           );
-          
-          // if (existingParts.length == 1 && existingParts[0].properties == part.properties) {
-          //   console.info('Found identical existing documentation part:' + JSON.stringify(part));
-          //   old.push(part)
 
-          // } else {
-          if (existingParts.length > 0) {
-            console.info('Delete existing documentation part:' + JSON.stringify(part));
+          // part doesnt have restApiId
+          // remove restApiId to be able to compare generatedPart against part
+          generatedPart.properties = _.omit(generatedPart.properties, 'restApiId')
+          // part is a stringified JSON - parse to compare to generatedPart JSON
+          part.properties = JSON.parse(part.properties)
+          
+          if (_.isEqual(generatedPart.properties, part.properties)) {
+            // console.info('Found identical existing documentation part:' + JSON.stringify(part));
+            this.documentationParts = _.pull(this.documentationParts, generatedPart)
+
+          } else {
+            console.info('Remove outdated documentation part:' + JSON.stringify(part));
             return aws.request('APIGateway', 'deleteDocumentationPart', {
               documentationPartId: part.id,
               restApiId: this.restApiId,
