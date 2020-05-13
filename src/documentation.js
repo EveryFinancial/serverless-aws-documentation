@@ -154,23 +154,24 @@ module.exports = function() {
             part.location.name === docPart.location.name &&
             part.location.path === '/' + docPart.location.path
           );
+          if (generatedPart) {
+            // part doesnt have restApiId
+            // remove restApiId to be able to compare generatedPart against part
+            generatedPart.properties = _.omit(generatedPart.properties, 'restApiId')
+            // part is a stringified JSON - parse to compare to generatedPart JSON
+            part.properties = JSON.parse(part.properties)
+            
+            if (_.isEqual(generatedPart.properties, part.properties)) {
+              // console.info('Found identical existing documentation part:' + JSON.stringify(part));
+              this.documentationParts = _.pull(this.documentationParts, generatedPart)
 
-          // part doesnt have restApiId
-          // remove restApiId to be able to compare generatedPart against part
-          generatedPart.properties = _.omit(generatedPart.properties, 'restApiId')
-          // part is a stringified JSON - parse to compare to generatedPart JSON
-          part.properties = JSON.parse(part.properties)
-          
-          if (_.isEqual(generatedPart.properties, part.properties)) {
-            // console.info('Found identical existing documentation part:' + JSON.stringify(part));
-            this.documentationParts = _.pull(this.documentationParts, generatedPart)
-
-          } else {
-            console.info('Remove outdated documentation part:' + JSON.stringify(part));
-            return aws.request('APIGateway', 'deleteDocumentationPart', {
-              documentationPartId: part.id,
-              restApiId: this.restApiId,
-            })
+            } else {
+              console.info('Remove outdated documentation part:' + JSON.stringify(part));
+              return aws.request('APIGateway', 'deleteDocumentationPart', {
+                documentationPartId: part.id,
+                restApiId: this.restApiId,
+              })
+            }
           }
         }
       ))
